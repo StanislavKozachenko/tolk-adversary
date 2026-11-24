@@ -39,6 +39,8 @@ export interface Abi {
   incomingExternal: BodyRef[];
   getMethods: GetMethod[];
   thrownErrors: ThrownError[];
+  /** `ty_idx` of the runtime storage struct, if the ABI declares one. */
+  storageTyIdx: number | undefined;
 }
 
 export function loadAbi(path: string): Abi {
@@ -58,6 +60,7 @@ export function loadAbi(path: string): Abi {
     incomingExternal: asBodyRefs(o["incoming_external"]),
     getMethods: asGetMethods(o["get_methods"]),
     thrownErrors: asThrownErrors(o["thrown_errors"]),
+    storageTyIdx: getNum(getObject(o["storage"]), "storage_ty_idx"),
   };
 }
 

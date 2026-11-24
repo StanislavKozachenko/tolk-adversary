@@ -38,12 +38,18 @@ export interface Message {
   hasReplayHeader: boolean;
 }
 
+export interface StorageSchema {
+  structName: string | null;
+  fields: Field[];
+}
+
 export interface Contract {
   name: string;
   schema: string;
   messages: Message[];
   getters: string[];
   errors: [string, number][];
+  storage: StorageSchema;
 }
 
 export function resolveContract(abi: Abi): Contract {
@@ -58,6 +64,7 @@ export function resolveContract(abi: Abi): Contract {
     messages,
     getters: abi.getMethods.map((g) => g.name),
     errors: abi.thrownErrors.map((e) => [displayErrorName(e), e.err_code]),
+    storage: r.storageSchema(abi.storageTyIdx),
   };
 }
 
@@ -151,6 +158,13 @@ class Resolver {
 
   private fields(ty: number, mono: number[] | undefined): Field[] {
     return this.rawFields(ty, mono).map(([name, fty]) => ({ name, ty: this.typeStr(fty) }));
+  }
+
+  /** The runtime storage struct's name and fields, resolved from its `ty_idx`. */
+  storageSchema(tyIdx: number | undefined): StorageSchema {
+    if (tyIdx === undefined) return { structName: null, fields: [] };
+    const ty = this.resolveAlias(tyIdx);
+    return { structName: this.structName(ty) ?? null, fields: this.fields(ty, this.monomorph(ty)) };
   }
 
   /**
