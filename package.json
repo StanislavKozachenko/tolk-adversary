@@ -1,0 +1,51 @@
+{
+  "name": "tolk-adversary",
+  "version": "0.0.0",
+  "description": "Generate adversarial (negative) test skeletons for Tolk/Acton smart contracts from their ABI",
+  "keywords": [
+    "ton",
+    "tolk",
+    "acton",
+    "smart-contracts",
+    "testing",
+    "security",
+    "code-generation",
+    "tvm"
+  ],
+  "license": "MIT",
+  "author": "Stanislav Kozachenko",
+  "homepage": "https://github.com/StanislavKozachenko/tolk-adversary#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StanislavKozachenko/tolk-adversary.git"
+  },
+  "bugs": {
+    "url": "https://github.com/StanislavKozachenko/tolk-adversary/issues"
+  },
+  "type": "module",
+  "bin": {
+    "tolk-adversary": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "tsup": "^9.0.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
