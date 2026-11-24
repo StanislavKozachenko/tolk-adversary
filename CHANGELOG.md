@@ -13,3 +13,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   replay-header detection. Handles both flat (opcode on the struct prefix) and
   wrapped/generic (`SignedRequest<union>`) message shapes.
 - `inspect` CLI command that prints the resolved model.
+- `generate` CLI command that emits a `*.adversarial.test.tolk` skeleton:
+  unknown-opcode and truncated-body tests (internal channel), with a best-effort
+  `deployTarget()` synthesized from the storage schema. Generated tests compile
+  and run under `acton test` (verified on the standard Jetton contract).
