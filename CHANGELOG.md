@@ -35,3 +35,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   storage (e.g. the counter template).
 
 ---
+
+## [0.1.0] - 2026-11-25
+
+### Added
+
+- add replay-header and cross-channel test families (#12)
+- sign crafted requests for signature-gated contracts (#10)
+- generate unknown-opcode and truncated-body adversarial tests (#8)
+- resolve the acton abi into a normalized contract model
+
+### Changed
+
+- make the // TODO note concrete (#14)
+- drop flaky macos runner and add a job timeout (#7)
+
+---
