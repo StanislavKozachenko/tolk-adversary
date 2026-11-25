@@ -1,5 +1,7 @@
 # tolk-adversary
 
+![Generating adversarial tests from an ABI and running them under acton test](.github/demo.gif)
+
 [![npm](https://img.shields.io/npm/v/tolk-adversary.svg)](https://www.npmjs.com/package/tolk-adversary)
 [![npm downloads](https://img.shields.io/npm/dm/tolk-adversary.svg)](https://www.npmjs.com/package/tolk-adversary)
 [![CI](https://github.com/StanislavKozachenko/tolk-adversary/actions/workflows/ci.yml/badge.svg)](https://github.com/StanislavKozachenko/tolk-adversary/actions/workflows/ci.yml)
