@@ -17,6 +17,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unknown-opcode and truncated-body tests (internal channel), with a best-effort
   `deployTarget()` synthesized from the storage schema. Generated tests compile
   and run under `acton test` (verified on the standard Jetton contract).
+- Signature-aware generation: for contracts whose incoming body is a `bits512`
+  signature plus the request (with a public key in storage), `deployTarget()`
+  stores a generated keypair's public key and each crafted request is signed, so
+  the tests reach the branch under test instead of the signature gate (verified
+  on the Telegram wallet).
 
 ### Fixed
 

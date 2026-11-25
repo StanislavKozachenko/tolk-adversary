@@ -7,6 +7,12 @@
  *   - truncated body per message (opcode only, fields missing) -> the contract
  *     must fail (cell underflow).
  *
+ * For signature-gated contracts (the incoming body is a `bits512` signature plus
+ * the request, with a public key in storage) the signature is checked before the
+ * opcode, so each crafted request is signed with a deploy-time keypair whose
+ * public key is placed in storage; otherwise the contract would reject at the
+ * signature gate instead of the branch under test.
+ *
  * The deploy is synthesized best-effort from the storage schema with placeholder
  * values. When every storage field has a concrete placeholder the generated
  * `deployTarget()` compiles and runs as-is; otherwise it degrades to a `// TODO`
@@ -25,16 +31,25 @@ export interface GenerateOptions {
 const DEPLOY_VALUE = "1000000000"; // 1 TON in nanotons
 const MSG_VALUE = "100000000"; // 0.1 TON in nanotons
 
+interface Ctx {
+  signed: boolean;
+  publicKeyField: string | null;
+}
+
 export function generateAdversarialTests(contract: Contract, opts: GenerateOptions): string {
+  const ctx: Ctx = {
+    signed: contract.signature.wrapped && contract.signature.publicKeyField !== null,
+    publicKeyField: contract.signature.publicKeyField,
+  };
   const out: string[] = [];
   const internal = contract.messages.filter((m) => m.channel === "internal");
 
   out.push(header(contract));
-  out.push(imports(contract, opts));
-  out.push(deployTarget(contract));
-  out.push(unknownOpcodeTest(contract, internal));
+  out.push(imports(opts, ctx));
+  out.push(deployTarget(contract, ctx));
+  out.push(unknownOpcodeTest(contract, internal, ctx));
   for (const m of internal) {
-    if (m.fields.length > 0 && m.opcode !== null) out.push(truncatedBodyTest(m));
+    if (m.fields.length > 0 && m.opcode !== null) out.push(truncatedBodyTest(m, ctx));
   }
 
   return out.join("\n\n") + "\n";
@@ -47,28 +62,43 @@ function header(c: Contract): string {
   ].join("\n");
 }
 
-function imports(c: Contract, opts: GenerateOptions): string {
-  return [
+function imports(opts: GenerateOptions, ctx: Ctx): string {
+  const lines = [
     'import "@acton/emulation/network"',
     'import "@acton/emulation/testing"',
     'import "@acton/testing/expect"',
-    `import "${opts.wrapperModule}"`,
-    `import "${opts.storageModule}"`,
-  ].join("\n");
+  ];
+  if (ctx.signed) lines.push('import "@acton/crypto"');
+  lines.push(`import "${opts.wrapperModule}"`, `import "${opts.storageModule}"`);
+  return lines.join("\n");
 }
 
-function deployTarget(c: Contract): string {
+function deployTarget(c: Contract, ctx: Ctx): string {
   const { structName, fields } = c.storage;
-  const literal = storageLiteral(structName, fields);
+  const overrides = ctx.signed && ctx.publicKeyField ? { [ctx.publicKeyField]: "kp.publicKey" } : {};
+  const literal = storageLiteral(structName, fields, overrides);
 
   if (literal === null || structName === null) {
     return [
       `// TODO: deploy ${c.name} with valid initial storage (could not synthesize it from the ABI).`,
       `fun deployTarget(): (${c.name}, address) {`,
       `    val deployer = testing.treasury("deployer");`,
-      `    // TODO: build storage and deploy, e.g. ${c.name}.fromStorage(/* ... */).deploy(deployer.address, { value: ${DEPLOY_VALUE} });`,
       `    assert(false, 0) throw 0; // remove once deploy is implemented`,
       `    return (${c.name}.fromAddress(deployer.address), deployer.address);`,
+      `}`,
+    ].join("\n");
+  }
+
+  if (ctx.signed) {
+    return [
+      `// Best-effort deploy synthesized from the storage schema. A keypair is created`,
+      `// and its public key stored, so crafted requests can be signed past the signature gate.`,
+      `fun deployTarget(): (${c.name}, address, KeyPair) {`,
+      `    val deployer = testing.treasury("deployer");`,
+      `    val kp = crypto.generateKeyPair();`,
+      `    val target = ${c.name}.fromStorage(${literal});`,
+      `    target.deploy(deployer.address, { value: ${DEPLOY_VALUE} });`,
+      `    return (target, deployer.address, kp);`,
       `}`,
     ].join("\n");
   }
@@ -86,12 +116,16 @@ function deployTarget(c: Contract): string {
 }
 
 /** A `Struct { field: placeholder, ... }` literal, or null if any field can't be synthesized. */
-function storageLiteral(structName: string | null, fields: Field[]): string | null {
+function storageLiteral(
+  structName: string | null,
+  fields: Field[],
+  overrides: Record<string, string>,
+): string | null {
   if (structName === null) return null;
   if (fields.length === 0) return `${structName} {}`;
   const parts: string[] = [];
   for (const f of fields) {
-    const v = placeholder(f.ty);
+    const v = overrides[f.name] ?? placeholder(f.ty);
     if (v === null) return null;
     parts.push(`${f.name}: ${v}`);
   }
@@ -110,32 +144,57 @@ function placeholder(ty: string): string | null {
   return null;
 }
 
-function unknownOpcodeTest(c: Contract, internal: Message[]): string {
+function unknownOpcodeTest(c: Contract, internal: Message[], ctx: Ctx): string {
   const used = new Set(internal.map((m) => m.opcode).filter((o): o is number => o !== null));
   const candidates = [0xffffffff, 0xdeadbeef, 0xbaddc0de, 0xffff0000];
   const opcode = candidates.find((o) => !used.has(o)) ?? 0xffffffff;
-  const expect = rejectAssertion(invalidMessageCode(c));
-  return [
-    "get fun `test adversarial: rejects an unknown opcode`() {",
-    "    val (target, from) = deployTarget();",
-    `    val body = beginCell().storeUint(0x${opcode.toString(16)}, 32).endCell();`,
-    "    val res = target.sendAny(from, body, { value: " + MSG_VALUE + " });",
-    `    ${expect}`,
-    "}",
-  ].join("\n");
+  const assertion = rejectAssertion(invalidMessageCode(c));
+  return testBody(
+    "rejects an unknown opcode",
+    `beginCell().storeUint(0x${opcode.toString(16)}, 32).endCell()`,
+    assertion,
+    ctx,
+  );
 }
 
-function truncatedBodyTest(m: Message): string {
+function truncatedBodyTest(m: Message, ctx: Ctx): string {
   const op = (m.opcode ?? 0).toString(16);
-  return [
-    `get fun \`test adversarial: rejects a truncated ${m.name} body\`() {`,
-    "    val (target, from) = deployTarget();",
-    `    // opcode only; the ${m.fields.length} field(s) after it are missing`,
-    `    val body = beginCell().storeUint(0x${op}, 32).endCell();`,
-    "    val res = target.sendAny(from, body, { value: " + MSG_VALUE + " });",
-    "    expect(res).toHaveTx({ success: false }); // cell underflow (exit 9)",
-    "}",
-  ].join("\n");
+  return testBody(
+    `rejects a truncated ${m.name} body`,
+    `beginCell().storeUint(0x${op}, 32).endCell()`,
+    "expect(res).toHaveTx({ success: false }); // cell underflow (exit 9)",
+    ctx,
+    `// opcode only; the ${m.fields.length} field(s) after it are missing`,
+  );
+}
+
+/** A test that deploys, sends `requestExpr` (signed when needed), and asserts. */
+function testBody(
+  title: string,
+  requestExpr: string,
+  assertion: string,
+  ctx: Ctx,
+  comment?: string,
+): string {
+  const lines = [`get fun \`test adversarial: ${title}\`() {`];
+  if (comment) lines.push(`    ${comment}`);
+  if (ctx.signed) {
+    lines.push(
+      `    val (target, from, kp) = deployTarget();`,
+      `    val request = ${requestExpr};`,
+      `    val signature = crypto.sign(kp.privateKey, request);`,
+      `    val body = beginCell().storeSlice(signature).storeSlice(request.beginParse()).endCell();`,
+      `    val res = target.sendAny(from, body, { value: ${MSG_VALUE} });`,
+    );
+  } else {
+    lines.push(
+      `    val (target, from) = deployTarget();`,
+      `    val body = ${requestExpr};`,
+      `    val res = target.sendAny(from, body, { value: ${MSG_VALUE} });`,
+    );
+  }
+  lines.push(`    ${assertion}`, "}");
+  return lines.join("\n");
 }
 
 /**

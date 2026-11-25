@@ -41,6 +41,19 @@ describe("generate", () => {
     expect(src).not.toContain("truncated TopUpTons");
   });
 
+  it("signs crafted requests and stores a keypair public key for signature-gated contracts (WalletTg)", () => {
+    const src = gen("WalletTg");
+    expect(src).toContain('import "@acton/crypto"');
+    expect(src).toContain("fun deployTarget(): (WalletTg, address, KeyPair)");
+    expect(src).toContain("val kp = crypto.generateKeyPair();");
+    // The public key storage field is filled from the keypair, not a placeholder.
+    expect(src).toContain("publicKey: kp.publicKey");
+    // Each crafted request is signed and wrapped as signature + request.
+    expect(src).toContain("crypto.sign(kp.privateKey, request)");
+    expect(src).toContain("storeSlice(signature).storeSlice(request.beginParse())");
+    expect(src).toContain("exitCode: 0xffff");
+  });
+
   it("degrades to a TODO deploy when a storage field can't be synthesized", () => {
     const contract: Contract = {
       name: "Widget",
@@ -49,6 +62,7 @@ describe("generate", () => {
       getters: [],
       errors: [],
       storage: { structName: "WidgetStorage", fields: [{ name: "inner", ty: "Cell<Thing>" }] },
+      signature: { wrapped: false, publicKeyField: null },
     };
     const src = generateAdversarialTests(contract, {
       wrapperModule: "../wrappers/Widget.gen",

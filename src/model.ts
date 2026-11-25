@@ -43,6 +43,13 @@ export interface StorageSchema {
   fields: Field[];
 }
 
+export interface SignatureInfo {
+  /** The incoming body is a signature wrapper (a `bits512` signature + the request). */
+  wrapped: boolean;
+  /** The storage field holding the signer's public key, if one is present. */
+  publicKeyField: string | null;
+}
+
 export interface Contract {
   name: string;
   schema: string;
@@ -50,6 +57,7 @@ export interface Contract {
   getters: string[];
   errors: [string, number][];
   storage: StorageSchema;
+  signature: SignatureInfo;
 }
 
 export function resolveContract(abi: Abi): Contract {
@@ -58,14 +66,28 @@ export function resolveContract(abi: Abi): Contract {
   for (const m of abi.incomingMessages) r.expand("internal", m.body_ty_idx, messages);
   for (const m of abi.incomingExternal) r.expand("external", m.body_ty_idx, messages);
 
+  const storage = r.storageSchema(abi.storageTyIdx);
+  const bodies = [...abi.incomingMessages, ...abi.incomingExternal].map((m) => m.body_ty_idx);
   return {
     name: abi.contractName,
     schema: abi.schemaVersion,
     messages,
     getters: abi.getMethods.map((g) => g.name),
     errors: abi.thrownErrors.map((e) => [displayErrorName(e), e.err_code]),
-    storage: r.storageSchema(abi.storageTyIdx),
+    storage,
+    signature: {
+      wrapped: bodies.some((b) => r.isSignatureWrapped(b)),
+      publicKeyField: publicKeyField(storage),
+    },
   };
+}
+
+/** The storage field that holds a public key, by name or by being a lone uint256. */
+function publicKeyField(storage: StorageSchema): string | null {
+  const byName = storage.fields.find((f) => /pub.?key/i.test(f.name));
+  if (byName) return byName.name;
+  const uint256s = storage.fields.filter((f) => f.ty === "uint256");
+  return uint256s.length === 1 ? (uint256s[0]?.name ?? null) : null;
 }
 
 export function formatSummary(c: Contract): string {
@@ -165,6 +187,17 @@ class Resolver {
     if (tyIdx === undefined) return { structName: null, fields: [] };
     const ty = this.resolveAlias(tyIdx);
     return { structName: this.structName(ty) ?? null, fields: this.fields(ty, this.monomorph(ty)) };
+  }
+
+  /** Is this incoming body a signature wrapper (a `bits512` signature + the request)? */
+  isSignatureWrapped(bodyTyIdx: number): boolean {
+    const ty = this.resolveAlias(bodyTyIdx);
+    if (this.kind(ty) !== "StructRef") return false;
+    const name = this.structName(ty);
+    const decl = name === undefined ? undefined : this.declByName.get(name);
+    // A struct carrying its own opcode is a plain message, not a wrapper.
+    if (decl === undefined || this.prefixOfDecl(decl) !== undefined) return false;
+    return this.rawFields(ty, this.monomorph(ty)).some(([, fty]) => this.typeStr(fty) === "bits512");
   }
 
   /**
