@@ -1,5 +1,10 @@
 # tolk-adversary
 
+[![npm](https://img.shields.io/npm/v/tolk-adversary.svg)](https://www.npmjs.com/package/tolk-adversary)
+[![npm downloads](https://img.shields.io/npm/dm/tolk-adversary.svg)](https://www.npmjs.com/package/tolk-adversary)
+[![CI](https://github.com/StanislavKozachenko/tolk-adversary/actions/workflows/ci.yml/badge.svg)](https://github.com/StanislavKozachenko/tolk-adversary/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > Generate adversarial (negative) test skeletons for [Tolk](https://docs.ton.org/languages/tolk) / [Acton](https://ton-blockchain.github.io/acton/) smart contracts straight from their ABI.
 
 Point it at a contract's ABI (`acton build --output-abi`) and it emits a
