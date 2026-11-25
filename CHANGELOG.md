@@ -36,6 +36,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.1] - 2026-11-25
+
+### Changed
+
+- blend the demo gif into the github background (#22)
+- add demo gif and social preview image (#20)
+- add npm link and badges (#18)
+
+---
+
 ## [0.1.0] - 2026-11-25
 
 ### Added
