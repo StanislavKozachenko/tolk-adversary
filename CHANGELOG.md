@@ -22,6 +22,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stores a generated keypair's public key and each crafted request is signed, so
   the tests reach the branch under test instead of the signature gate (verified
   on the Telegram wallet).
+- Replay-header and cross-channel families: for replay-protected contracts,
+  tests for a wrong seqno, an expired `validUntil` and a wrong subwallet id,
+  asserted against the contract's own error codes; and, for contracts with
+  separate internal/external channels, that an external-only opcode is rejected
+  on the internal entry (verified on the Telegram wallet).
 
 ### Fixed
 

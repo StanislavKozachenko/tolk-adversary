@@ -29,6 +29,14 @@ export interface Field {
   ty: string;
 }
 
+export type HeaderRole = "seqno" | "subwalletId" | "validUntil" | "other";
+
+export interface HeaderField {
+  name: string;
+  bits: number;
+  role: HeaderRole;
+}
+
 export interface Message {
   channel: Channel;
   name: string;
@@ -36,6 +44,19 @@ export interface Message {
   opcodeLen: number;
   fields: Field[];
   hasReplayHeader: boolean;
+  /**
+   * The leading replay header (a nested struct with a `seqno`), as an ordered
+   * list of uint fields, when the message starts with one and every header field
+   * is a uint (so it can be serialized). `null` otherwise.
+   */
+  header: HeaderField[] | null;
+  /**
+   * Whether the body parses from the opcode and header alone (every field after
+   * the header is a `RemainingBitsAndRefs`, which accepts an empty tail). Such a
+   * message lets a header-validation test reach the header check without having
+   * to synthesize the rest of the body.
+   */
+  headerOnlyParses: boolean;
 }
 
 export interface StorageSchema {
@@ -88,6 +109,19 @@ function publicKeyField(storage: StorageSchema): string | null {
   if (byName) return byName.name;
   const uint256s = storage.fields.filter((f) => f.ty === "uint256");
   return uint256s.length === 1 ? (uint256s[0]?.name ?? null) : null;
+}
+
+/** Bit width of a `uintN` type string, or null if it is not a plain uint. */
+function uintWidth(ty: string): number | null {
+  const m = /^uint(\d+)$/.exec(ty);
+  return m?.[1] !== undefined ? Number(m[1]) : null;
+}
+
+function headerRole(name: string): HeaderRole {
+  if (/seqno/i.test(name)) return "seqno";
+  if (/subwallet/i.test(name)) return "subwalletId";
+  if (/valid.?until|expir/i.test(name)) return "validUntil";
+  return "other";
 }
 
 export function formatSummary(c: Contract): string {
@@ -216,6 +250,39 @@ class Resolver {
     return false;
   }
 
+  /**
+   * If the message starts with a replay-header struct (a nested struct carrying
+   * a `seqno`) whose fields are all uints, return them in order; otherwise null.
+   */
+  private headerFields(ty: number, mono: number[] | undefined): HeaderField[] | null {
+    const first = this.rawFields(ty, mono)[0];
+    if (first === undefined) return null;
+    const headerTy = this.resolveAlias(first[1]);
+    if (this.kind(headerTy) !== "StructRef") return null;
+    const inner = this.rawFields(headerTy, this.monomorph(headerTy));
+    if (!inner.some(([name]) => name === "seqno")) return null;
+
+    const out: HeaderField[] = [];
+    for (const [name, fty] of inner) {
+      const bits = uintWidth(this.typeStr(fty));
+      if (bits === null) return null; // not a uint — cannot serialize generically
+      out.push({ name, bits, role: headerRole(name) });
+    }
+    return out;
+  }
+
+  /** Does the body parse from opcode + header alone (trailing fields all `remaining`)? */
+  private headerOnlyParses(ty: number, mono: number[] | undefined): boolean {
+    if (this.headerFields(ty, mono) === null) return false;
+    const rf = this.rawFields(ty, mono);
+    for (let i = 1; i < rf.length; i++) {
+      const field = rf[i];
+      if (field === undefined) continue;
+      if (this.kind(this.resolveAlias(field[1])) !== "remaining") return false;
+    }
+    return true;
+  }
+
   private prefixOfDecl(decl: JsonObject | undefined): [number, number] | undefined {
     const p = getObject(decl?.["prefix"]);
     const num = getNum(p, "prefix_num");
@@ -247,6 +314,8 @@ class Resolver {
           opcodeLen: prefix[1],
           fields: this.fields(ty, mono),
           hasReplayHeader: this.hasSeqno(ty, mono, 0),
+          header: this.headerFields(ty, mono),
+          headerOnlyParses: this.headerOnlyParses(ty, mono),
         });
         return;
       }
@@ -268,6 +337,8 @@ class Resolver {
           opcodeLen: 0,
           fields: this.fields(ty, mono),
           hasReplayHeader: false,
+          header: null,
+          headerOnlyParses: false,
         });
       }
       return;
@@ -280,6 +351,8 @@ class Resolver {
       opcodeLen: 0,
       fields: [],
       hasReplayHeader: false,
+      header: null,
+      headerOnlyParses: false,
     });
   }
 
@@ -299,6 +372,8 @@ class Resolver {
         opcodeLen: getNum(vo, "prefix_len") ?? 0,
         fields: this.fields(rvty, mono),
         hasReplayHeader: this.hasSeqno(rvty, mono, 0),
+        header: this.headerFields(rvty, mono),
+        headerOnlyParses: this.headerOnlyParses(rvty, mono),
       });
     }
   }
