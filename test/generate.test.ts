@@ -54,6 +54,27 @@ describe("generate", () => {
     expect(src).toContain("exitCode: 0xffff");
   });
 
+  it("emits replay-header and cross-channel tests for a signature wallet (WalletTg)", () => {
+    const src = gen("WalletTg");
+    // Replay family against the real error codes (seqno 133, subwallet 134, expired 136).
+    expect(src).toContain("rejects a wrong seqno (replay protection)");
+    expect(src).toContain("exitCode: 0x85");
+    expect(src).toContain("rejects an expired message");
+    expect(src).toContain("blockchain.now() - 1");
+    expect(src).toContain("exitCode: 0x88");
+    expect(src).toContain("rejects a wrong subwallet id");
+    expect(src).toContain("exitCode: 0x86");
+    // Cross-channel: an external-only opcode on the internal entry.
+    expect(src).toContain("rejects an external-only opcode on the internal entry");
+  });
+
+  it("emits no replay-header or cross-channel tests for a plain contract (JettonMinter)", () => {
+    const src = gen("JettonMinter");
+    expect(src).not.toContain("rejects a wrong seqno");
+    expect(src).not.toContain("rejects an expired message");
+    expect(src).not.toContain("external-only opcode");
+  });
+
   it("degrades to a TODO deploy when a storage field can't be synthesized", () => {
     const contract: Contract = {
       name: "Widget",

@@ -19,7 +19,7 @@
  * stub for the maintainer to complete.
  */
 
-import type { Contract, Field, Message } from "./model";
+import type { Contract, Field, HeaderField, HeaderRole, Message } from "./model";
 
 export interface GenerateOptions {
   /** Import specifier for the contract wrapper, e.g. `../wrappers/JettonMinter.gen`. */
@@ -43,6 +43,7 @@ export function generateAdversarialTests(contract: Contract, opts: GenerateOptio
   };
   const out: string[] = [];
   const internal = contract.messages.filter((m) => m.channel === "internal");
+  const external = contract.messages.filter((m) => m.channel === "external");
 
   out.push(header(contract));
   out.push(imports(opts, ctx));
@@ -50,6 +51,19 @@ export function generateAdversarialTests(contract: Contract, opts: GenerateOptio
   out.push(unknownOpcodeTest(contract, internal, ctx));
   for (const m of internal) {
     if (m.fields.length > 0 && m.opcode !== null) out.push(truncatedBodyTest(m, ctx));
+  }
+
+  // M2: replay-header validation (only reachable past the signature gate, and
+  // only with a message that parses from the header alone).
+  const headerMsg = internal.find((m) => m.headerOnlyParses && m.header !== null && m.opcode !== null);
+  if (ctx.signed && headerMsg?.header) {
+    out.push(...headerFamily(contract, headerMsg.opcode ?? 0, headerMsg.header));
+  }
+
+  // M2: cross-channel — an external-only opcode must be rejected on the internal entry.
+  const ext = external.find((m) => m.opcode !== null);
+  if (ext?.opcode != null && internal.length > 0) {
+    out.push(crossChannelTest(contract, ext, ctx));
   }
 
   return out.join("\n\n") + "\n";
@@ -195,6 +209,89 @@ function testBody(
   }
   lines.push(`    ${assertion}`, "}");
   return lines.join("\n");
+}
+
+/** Header-validation tests: wrong seqno (replay), expired, wrong subwallet id. */
+function headerFamily(c: Contract, opcode: number, header: HeaderField[]): string[] {
+  const tests: string[] = [];
+  const has = (r: HeaderRole): boolean => header.some((h) => h.role === r);
+
+  const seqnoErr = errorByName(c, /seqno/i);
+  if (has("seqno") && seqnoErr !== null) {
+    tests.push(
+      headerTest("rejects a wrong seqno (replay protection)", opcode, header, "seqno", "1", seqnoErr),
+    );
+  }
+  const expiredErr = errorByName(c, /expir|valid.?until/i);
+  if (has("validUntil") && expiredErr !== null) {
+    tests.push(
+      headerTest("rejects an expired message", opcode, header, "validUntil", "blockchain.now() - 1", expiredErr),
+    );
+  }
+  const subErr = errorByName(c, /subwallet/i);
+  if (has("subwalletId") && subErr !== null) {
+    tests.push(
+      headerTest("rejects a wrong subwallet id", opcode, header, "subwalletId", "1", subErr),
+    );
+  }
+  return tests;
+}
+
+/** One header test: a signed request whose header has one field set to a bad value. */
+function headerTest(
+  title: string,
+  opcode: number,
+  header: HeaderField[],
+  role: HeaderRole,
+  failValue: string,
+  errorCode: number,
+): string {
+  return [
+    `get fun \`test adversarial: ${title}\`() {`,
+    "    val (target, from, kp) = deployTarget();",
+    `    val request = ${headerRequestExpr(opcode, header, role, failValue)};`,
+    "    val signature = crypto.sign(kp.privateKey, request);",
+    "    val body = beginCell().storeSlice(signature).storeSlice(request.beginParse()).endCell();",
+    "    val res = target.sendAny(from, body, { value: " + MSG_VALUE + " });",
+    `    expect(res).toHaveTx({ success: false, exitCode: 0x${errorCode.toString(16)} });`,
+    "}",
+  ].join("\n");
+}
+
+/** `beginCell().storeUint(opcode).storeUint(each header field)...endCell()`. */
+function headerRequestExpr(
+  opcode: number,
+  header: HeaderField[],
+  targetRole: HeaderRole,
+  failValue: string,
+): string {
+  const lines = ["beginCell()", `        .storeUint(0x${opcode.toString(16)}, 32)`];
+  for (const h of header) {
+    const value = h.role === targetRole ? failValue : defaultHeaderValue(h.role);
+    lines.push(`        .storeUint(${value}, ${h.bits}) // ${h.name}`);
+  }
+  lines.push("        .endCell()");
+  return lines.join("\n");
+}
+
+/** A header value that passes validation (so a single bad field is isolated). */
+function defaultHeaderValue(role: HeaderRole): string {
+  return role === "validUntil" ? "blockchain.now() + 1000" : "0";
+}
+
+function errorByName(c: Contract, re: RegExp): number | null {
+  for (const [name, code] of c.errors) if (re.test(name)) return code;
+  return null;
+}
+
+/** An external-only opcode fed to the internal entry must be rejected. */
+function crossChannelTest(c: Contract, ext: Message, ctx: Ctx): string {
+  return testBody(
+    `rejects an external-only opcode on the internal entry (${ext.name})`,
+    `beginCell().storeUint(0x${(ext.opcode ?? 0).toString(16)}, 32).endCell()`,
+    rejectAssertion(invalidMessageCode(c)),
+    ctx,
+  );
 }
 
 /**
