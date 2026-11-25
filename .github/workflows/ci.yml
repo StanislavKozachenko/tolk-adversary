@@ -33,13 +33,45 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  e2e:
+    name: e2e (acton)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Install acton 1.2.0
+        run: |
+          base=https://github.com/ton-blockchain/acton/releases/download/v1.2.0
+          curl -fsSLO "$base/acton-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLO "$base/acton-x86_64-unknown-linux-gnu.tar.gz.sha256"
+          sha256sum -c acton-x86_64-unknown-linux-gnu.tar.gz.sha256
+          mkdir -p "$HOME/acton"
+          tar -xzf acton-x86_64-unknown-linux-gnu.tar.gz -C "$HOME/acton"
+          echo "$HOME/acton" >> "$GITHUB_PATH"
+
+      - name: Generate adversarial tests and run them under acton
+        working-directory: e2e/counter
+        run: |
+          acton build --output-abi build/abi --color never
+          node ../../dist/cli.js generate build/abi/Counter.json --project . --out tests/adversarial.test.tolk
+          acton test tests/adversarial.test.tolk --color never
+
   ci-ok:
     name: CI ok
     if: always()
-    needs: [test]
+    needs: [test, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed
-        if: needs.test.result != 'success'
+        if: needs.test.result != 'success' || needs.e2e.result != 'success'
         run: exit 1
       - run: echo "all required jobs passed"

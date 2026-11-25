@@ -17,3 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unknown-opcode and truncated-body tests (internal channel), with a best-effort
   `deployTarget()` synthesized from the storage schema. Generated tests compile
   and run under `acton test` (verified on the standard Jetton contract).
+
+### Fixed
+
+- Synthesized deploy uses a concrete placeholder for non-optional `address`
+  storage fields, so generated tests compile for contracts that keep an owner in
+  storage (e.g. the counter template).

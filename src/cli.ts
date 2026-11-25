@@ -6,8 +6,8 @@
  * the contract ABI (`acton build --output-abi`).
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { loadAbi } from "./abi";
 import { generateAdversarialTests } from "./generate";
@@ -107,6 +107,7 @@ function runGenerate(abiPath: string | undefined, values: GenerateValues): numbe
   if (values.out === undefined) {
     process.stdout.write(src);
   } else {
+    mkdirSync(dirname(values.out), { recursive: true });
     writeFileSync(values.out, src);
     console.log(`wrote ${values.out}`);
   }
