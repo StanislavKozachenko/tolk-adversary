@@ -9,8 +9,9 @@ requests and cross-channel messages — each one asserted against the contract's
 own error codes and ready to run under `acton test`.
 
 It is a **scaffolder, not a bug finder**: it writes the boilerplate and a
-coverage checklist from the ABI. Where the expected behaviour depends on
-contract semantics it can't see, it leaves a `// TODO`.
+coverage checklist from the ABI. In the two cases it can't resolve from the ABI
+alone — a deploy it can't synthesize (non-scalar storage fields) or an exit code
+it can't pin down (no recognizable error) — it leaves a `// TODO`.
 
 ## Why
 
