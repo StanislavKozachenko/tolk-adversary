@@ -103,7 +103,7 @@ function placeholder(ty: string): string | null {
   if (ty.endsWith("?")) return "null";
   if (ty === "coins" || ty === "int" || /^u?int\d+$/.test(ty)) return "0";
   if (ty === "bool") return "false";
-  if (ty === "address") return "createAddressNone()";
+  if (ty === "address") return "address.fromWorkchainAndHash(0, 0)";
   if (ty === "cell") return "beginCell().endCell()";
   if (ty.startsWith("map<")) return "[]";
   // Cell<T>, bitsN, nested structs, enums: cannot synthesize generically yet.
