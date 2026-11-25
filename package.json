@@ -1,6 +1,6 @@
 {
   "name": "tolk-adversary",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Generate adversarial (negative) test skeletons for Tolk/Acton smart contracts from their ABI",
   "keywords": [
     "ton",
@@ -37,7 +37,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

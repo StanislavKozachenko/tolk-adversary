@@ -33,3 +33,5 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Synthesized deploy uses a concrete placeholder for non-optional `address`
   storage fields, so generated tests compile for contracts that keep an owner in
   storage (e.g. the counter template).
+
+---
